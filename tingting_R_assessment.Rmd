@@ -1,0 +1,156 @@
+---
+title: "tingting_R_assessment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(leaflet)
+library(plotly)
+```
+
+2. Read in the data from climate.csv. How many rows and columns does this dataset have?
+Ans: there are 37625 rows and 7 columns in the climate dataset.
+```{r climate}
+climate <- read_csv("climate.csv")
+dim(climate)
+```
+3. Read in the country_codes.csv data. This contains country names and 2 and 3-letter ISO country codes. Merge this with the original dataset (keeping only those rows that have matches on the 2-letter country code in both tables). At this point, feel free to rename columns and/or drop any columns that you think will not be useful.
+
+```{r country}
+country <- read_csv("country_codes.csv")
+merge <-  climate %>% 
+  inner_join(country,by = c("Country" = "A2 (ISO)"))
+```
+4. After the merge, how many countries are left in the dataset?
+Ans: there are 35 countries left in the dataset.
+```{r merge}
+merge %>% 
+  summarise("Number of Countries" =n_distinct(Country)) 
+```
+
+5. Create a new dataframe, called "renewable" which contains all rows with indicator "Share of renewable electricity generation" from the year 2014.
+
+- Create a visualization (your choice) showing the distribution of the share of renewable electricity generation across the countries in the dataset. 
+- What can you say about this distribution? 
+Ans: It is a right-skewed distribution, which has a long right tail.
+```{r renewable}
+renewable <- merge %>% 
+  filter(Year == 2014)%>% 
+  filter(Indicator == "Share of renewable electricity generation")
+
+renewable %>% 
+  ggplot(aes(x=Value)) + geom_histogram(bins = 7)
+```
+- Create a new column in renewable, called "majority_renewable" and in this column indicate whether a country is majority renewable (>50% renewable electricity generation) or not. 
+- What percentage of countries in this data frame were majority renewable in 2014?
+Ans: 48.4% of countries in this data frame were majority renewable in 2014.
+```{r majority_renewable}
+Q2 <- renewable %>% 
+  summarise(quantile(Value,0.5))
+
+renewable<- renewable %>% 
+  mutate(majority_renewable = case_when(
+    Value>Q2[[1]] ~ "yes",
+    TRUE ~ "no"
+  ))
+
+renewable %>% 
+  group_by(majority_renewable) %>% 
+  summarise(n()) %>% 
+  mutate(Pct = 100*`n()`/sum(`n()`))
+```
+
+- How does the "Electricity emissions intensity" in 2014 compare for countries which were majority renewable in 2014 vs those which were not? Create a visualization (your choice) to support your assessment.
+
+Ans: Countries with majority renewable in 2014 had lower electricity emissions intensity.
+```{r majority_renewable}
+
+emissions <- merge %>% 
+  filter(Year == 2014)%>% 
+  filter(Indicator == "Electricity emissions intensity")%>% 
+  rename('emissions' = Value)
+
+merge2 <-  renewable %>% 
+  inner_join(emissions, by = c("Country" = "Country"))
+
+merge2 %>%    
+  ggplot(aes(x=majority_renewable,y=emissions))+ geom_boxplot()
+```
+
+6. Which country was the top oil and gas producer in 2014? (Hint: this value can be found by using the indicator "Oil and Gas activity: production")
+
+Ans: US with 1152.238 Mtoe unit production.
+
+```{r oil}
+oildata <- merge %>% 
+  filter(Year ==2014)%>% 
+  filter(Indicator =="Oil and Gas activity: production")%>% 
+  rename(oil = Value) 
+oildata %>% 
+  top_n(1, oil)
+```
+
+7. Look at the trend in oil and gas production (again, using the "Oil and Gas activity: production" indicator) in the US from 1990 through 2014. What do you notice? Create a visualization (your choice) to support your assessment.
+
+Ans: I noticed a deep increase in oil and gas production from 2005 to 2014 in the US. 
+
+```{r oil trend}
+oiltrend <- merge %>% 
+  filter(Year<=2014 & Year>=1990 )%>% 
+  filter(Country == 'US')%>% 
+  filter(Indicator =="Oil and Gas activity: production")%>% 
+  rename(US_Oil = Value) 
+oiltrend %>% 
+  ggplot(aes(x=Year,y=US_Oil))+ geom_line()
+```
+
+
+8. Find the total (across all countries in the dataset) number of new EV sales per year from 2009 through 2014. (Sales per country can be found using indicator "New EV sales".) What do you notice? Create a visualization (your choice) to support your answer.
+Ans: I noticed an increasing trend in total number of new EV sales per year from 2009 through 2014.
+
+```{r sales}
+sales <- merge %>% 
+  filter(Year<=2014 & Year>=2009 )%>% 
+  filter(Indicator =="New EV sales")%>% 
+  rename(New_EV_sales = Value) 
+sales %>% 
+  group_by(Year) %>% 
+  summarize(Total_New_EV_sales = sum(New_EV_sales)) %>% 
+  ggplot(aes(x=Year,y=Total_New_EV_sales))+ geom_line()
+```
+9. Create a scatter plot showing Emissions per capita vs GDP per capita for the year 2014. Hint: You can find these values by using indicators "Emissions per capita" and "GDP per capita". Hint #2: You will probably want to subset and then pivot the data in order to create this plot.
+
+```{r scatter}
+scatter <- merge %>% 
+  select(Year,Indicator,Value,Country ) %>% 
+  filter(Year == 2014 )%>% 
+  filter(Indicator  %in% c("Emissions per capita","GDP per capita"))%>% 
+  spread(key=Indicator, value = Value) %>% 
+  rename( Emissions_per_capita= "Emissions per capita",GDP_per_capita="GDP per capita") 
+
+scatter %>% 
+  drop_na() %>% 
+  ggplot(aes(x=Emissions_per_capita,y=GDP_per_capita))+  geom_point()
+
+```
+
+10. Find the correlation between emissions per capita and GDP per capita for the year 2014 (dropping NAs). How strong of a (linear) relationship is there between these two measures?
+
+Ans: the correlation between emissions per capita and GDP per capita for the year 2014 is 0.58. A correlation coefficient of 0.50 or larger is thought to represent a strong or large correlation.
+
+```{r corr}
+library(ggpubr)
+scatter %>% 
+  drop_na() %>% 
+  ggscatter( x= 'Emissions_per_capita', y='GDP_per_capita',
+          add= 'reg.line',conf.int=TRUE,
+          cor.coef=TRUE, cor.method= 'pearson',
+          xlab='Emissions_per_capita', ylab= 'GDP_per_capita')+
+  theme(legend.position='none')
+
+```
+
+
+
